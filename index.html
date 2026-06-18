@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>R&R Wealth</title>
+
+<!-- ============================================================
+     FIREBASE SETUP (real-time sync between Rahul & Rhea)
+     ------------------------------------------------------------
+     1. Go to https://console.firebase.google.com/ and create a
+        new project (e.g. "rr-wealth").
+     2. In the project, click the </> (Web) icon to register a web
+        app. Copy the firebaseConfig object it gives you.
+     3. Paste those values into the FIREBASE_CONFIG object further
+        down in the <script> section (search for FIREBASE_CONFIG).
+     4. In the left menu open "Build > Firestore Database" and click
+        "Create database". Start in TEST mode for now (we'll add
+        rules / auth once it's on HTTPS).
+     5. Deploy this single file to Netlify (drag-and-drop the file
+        onto app.netlify.com/drop). Both of you open the same URL
+        and edits sync live.
+     If you leave FIREBASE_CONFIG blank the app still works fully
+     offline using your browser's localStorage.
+     ============================================================ -->
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#070b18; --bg2:#0b1126; --card:rgba(255,255,255,0.05); --card-border:rgba(255,255,255,0.09);
+  --text:#eef1fb; --muted:#8b94b3; --muted2:#646e93;
+  --accent:#5b8cff; --accent2:#9b6bff; --grad:linear-gradient(135deg,#5b8cff,#9b6bff);
+  --green:#34d399; --red:#fb6f84; --amber:#f7c948;
+  --glass-blur:18px; --shadow:0 8px 32px rgba(0,0,0,0.35);
+}
+[data-theme="light"]{
+  --bg:#eef1fa; --bg2:#e3e8f6; --card:rgba(255,255,255,0.72); --card-border:rgba(20,30,60,0.10);
+  --text:#10162b; --muted:#5a6480; --muted2:#7a85a6;
+  --green:#0fa877; --red:#e23b54; --amber:#c9930a;
+  --shadow:0 8px 28px rgba(40,60,120,0.14);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  background:radial-gradient(1200px 700px at 80% -10%,#1a2350 0%,transparent 55%),
+             radial-gradient(900px 600px at -10% 20%,#2a1750 0%,transparent 50%),
+             var(--bg);
+  color:var(--text); min-height:100vh; padding-bottom:84px;
+  transition:background .4s,color .3s;
+}
+.wrap{max-width:560px;margin:0 auto;padding:16px 14px 0}
+.hidden{display:none!important}
+
+/* top bar */
+.topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.brand{font-weight:800;font-size:20px;letter-spacing:.5px;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.topright{display:flex;align-items:center;gap:10px}
+.sync{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--card-border);padding:5px 9px;border-radius:20px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red)}
+.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.iconbtn{background:var(--card);border:1px solid var(--card-border);color:var(--text);width:34px;height:34px;border-radius:50%;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+/* profile pill */
+.pill{display:flex;background:var(--card);border:1px solid var(--card-border);border-radius:30px;padding:4px;margin-bottom:18px;backdrop-filter:blur(var(--glass-blur))}
+.pill button{flex:1;border:0;background:transparent;color:var(--muted);font-weight:600;font-size:14px;padding:9px;border-radius:24px;cursor:pointer;transition:.25s}
+.pill button.active{color:#fff;background:var(--grad);box-shadow:0 4px 16px rgba(91,140,255,.4)}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--card-border);border-radius:20px;padding:18px;margin-bottom:14px;backdrop-filter:blur(var(--glass-blur));-webkit-backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow)}
+.card h3{margin:0 0 14px;font-size:14px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px}
+.hero{position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:var(--grad);opacity:.10}
+.hero .label{font-size:13px;color:var(--muted);position:relative}
+.hero .val{font-size:38px;font-weight:800;margin:6px 0 4px;position:relative;letter-spacing:-1px}
+.delta{font-size:13px;font-weight:600;position:relative;display:inline-flex;gap:5px;align-items:center}
+.delta.up{color:var(--green)} .delta.down{color:var(--red)}
+.splitrow{display:flex;gap:10px;margin-top:14px;position:relative}
+.split{flex:1;background:rgba(255,255,255,.04);border:1px solid var(--card-border);border-radius:14px;padding:11px 13px}
+.split .n{font-size:12px;color:var(--muted)} .split .v{font-size:19px;font-weight:700;margin-top:3px}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.metric{background:var(--card);border:1px solid var(--card-border);border-radius:18px;padding:15px;backdrop-filter:blur(var(--glass-blur));box-shadow:var(--shadow)}
+.metric .n{font-size:12px;color:var(--muted)} .metric .v{font-size:23px;font-weight:800;margin-top:5px;letter-spacing:-.5px}
+.metric .s{font-size:11px;color:var(--muted);margin-top:3px}
+
+.btn{background:var(--grad);color:#fff;border:0;border-radius:14px;padding:13px;font-size:15px;font-weight:700;width:100%;cursor:pointer;box-shadow:0 4px 18px rgba(91,140,255,.35)}
+.btn.ghost{background:var(--card);border:1px solid var(--card-border);color:var(--text);box-shadow:none}
+.btnrow{display:flex;gap:10px;margin-bottom:14px}
+.btnrow .btn{flex:1}
+
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:6px 6px}
+td{padding:8px 6px;border-top:1px solid var(--card-border)}
+td input{width:100%;background:transparent;border:0;color:var(--text);font-size:13px;font-family:inherit;padding:2px}
+td input:focus{outline:1px solid var(--accent);border-radius:5px}
+.right{text-align:right} .center{text-align:center}
+.pl-pos{color:var(--green);font-weight:600} .pl-neg{color:var(--red);font-weight:600}
+.xbtn{background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:15px}
+.addbtn{background:transparent;border:1px dashed var(--card-border);color:var(--accent);border-radius:12px;padding:9px;width:100%;cursor:pointer;font-weight:600;font-size:13px;margin-top:8px}
+.tot{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--card-border);font-weight:700}
+.tot .v{font-size:18px}
+
+.subhead{display:flex;align-items:center;gap:8px;margin:18px 4px 8px;font-weight:700;font-size:15px}
+.subhead .tag{font-size:11px;font-weight:600;color:var(--accent);background:rgba(91,140,255,.13);padding:2px 8px;border-radius:8px}
+
+/* credit cards */
+.ccwrap{display:flex;flex-direction:column;gap:12px}
+.cc{border-radius:18px;padding:16px;color:#fff;position:relative;overflow:hidden;cursor:pointer;min-height:110px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:var(--shadow)}
+.cc .net{font-size:11px;opacity:.85;letter-spacing:1px;text-transform:uppercase}
+.cc .nm{font-size:16px;font-weight:700;margin-top:2px}
+.cc .billrow{display:flex;justify-content:space-between;align-items:flex-end}
+.cc .bl{font-size:11px;opacity:.8} .cc .bv{font-size:22px;font-weight:800}
+.cc .chip{position:absolute;top:14px;right:14px;width:30px;height:22px;border-radius:5px;background:linear-gradient(135deg,#f5d77a,#c69b3a);opacity:.9}
+.cc-amex-g{background:linear-gradient(135deg,#1d6b4f,#0d3d2b)}
+.cc-hdfc-b{background:linear-gradient(135deg,#2356c8,#10224f)}
+.cc-hdfc-r{background:linear-gradient(135deg,#c8324a,#5a0f1f)}
+.cc-onecard{background:linear-gradient(135deg,#3a3a44,#101015)}
+.cc-amex-t{background:linear-gradient(135deg,#0e9aa7,#08474d)}
+.cc-diners{background:linear-gradient(135deg,#6b3fc8,#2a134f)}
+
+.sumrow{display:flex;justify-content:space-between;font-size:14px;padding:7px 0}
+.sumrow.big{font-size:16px;font-weight:700;border-top:1px solid var(--card-border);margin-top:6px;padding-top:11px}
+.bar{height:9px;border-radius:6px;background:rgba(255,255,255,.08);overflow:hidden;margin-top:8px}
+.bar>div{height:100%;border-radius:6px;background:var(--grad);transition:width .5s}
+
+/* sliders */
+.slider{margin:16px 0}
+.slider label{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:8px}
+.slider label b{color:var(--text);font-size:15px}
+input[type=range]{width:100%;-webkit-appearance:none;height:6px;border-radius:5px;background:rgba(255,255,255,.12)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--grad);cursor:pointer;box-shadow:0 2px 8px rgba(91,140,255,.5)}
+.projgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px}
+.proj{background:var(--card);border:1px solid var(--card-border);border-radius:16px;padding:14px}
+.proj .yr{font-size:12px;color:var(--accent);font-weight:700} .proj .nv{font-size:20px;font-weight:800;margin-top:6px}
+.proj .rv{font-size:12px;color:var(--muted);margin-top:3px}
+.insight{font-size:13px;line-height:1.6;color:var(--text);background:rgba(91,140,255,.08);border:1px solid rgba(91,140,255,.2);border-radius:14px;padding:14px;margin-top:6px}
+
+/* bottom nav */
+.nav{position:fixed;bottom:0;left:0;right:0;background:rgba(10,14,30,.82);backdrop-filter:blur(20px);border-top:1px solid var(--card-border);display:flex;z-index:50}
+[data-theme="light"] .nav{background:rgba(245,247,253,.85)}
+.nav button{flex:1;background:0;border:0;color:var(--muted);padding:10px 0 13px;font-size:10px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px}
+.nav button .ic{font-size:19px}
+.nav button.active{color:var(--accent)}
+
+/* modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:flex-end;justify-content:center;z-index:100;padding:0}
+.modal .box{background:var(--bg2);border:1px solid var(--card-border);border-radius:22px 22px 0 0;padding:22px;width:100%;max-width:560px;box-shadow:0 -8px 40px rgba(0,0,0,.5)}
+.modal h3{margin:0 0 16px;font-size:17px}
+.modal input{width:100%;background:var(--card);border:1px solid var(--card-border);color:var(--text);font-size:18px;padding:13px;border-radius:13px;font-family:inherit;margin-bottom:14px}
+.filerow{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.filebtn{background:var(--card);border:1px solid var(--card-border);color:var(--accent);border-radius:11px;padding:9px 13px;font-size:13px;font-weight:600;cursor:pointer}
+canvas{max-width:100%}
+.hint{font-size:11px;color:var(--muted);margin-top:4px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand">R&amp;R Wealth</div>
+    <div class="topright">
+      <div class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Local</span></div>
+      <button class="iconbtn" id="themeBtn">🌙</button>
+    </div>
+  </div>
+
+  <div class="pill" id="profilePill">
+    <button data-p="rahul">Rahul</button>
+    <button data-p="both" class="active">Both</button>
+    <button data-p="rhea">Rhea</button>
+  </div>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section id="page-dashboard">
+    <div class="card hero">
+      <div class="label" id="nwLabel">Combined Net Worth</div>
+      <div class="val" id="nwVal">₹0</div>
+      <div class="delta up" id="nwDelta">—</div>
+      <div class="splitrow" id="nwSplit"></div>
+    </div>
+    <div class="grid2">
+      <div class="metric"><div class="n">Monthly Income</div><div class="v" id="mIncome">₹0</div></div>
+      <div class="metric"><div class="n">Monthly Savings</div><div class="v" id="mSavings">₹0</div></div>
+      <div class="metric"><div class="n">Total Expenses</div><div class="v" id="mExp">₹0</div></div>
+      <div class="metric"><div class="n">Savings Rate</div><div class="v" id="mRate">0%</div></div>
+    </div>
+    <div class="card"><h3>Asset Allocation</h3><canvas id="allocChart" height="220"></canvas></div>
+    <div class="card"><h3>Monthly Expenses</h3><canvas id="expChart" height="200"></canvas></div>
+    <div class="card"><h3>Net Worth History</h3><canvas id="histChart" height="200"></canvas>
+      <button class="btn" style="margin-top:14px" id="snapBtn">📸 Save Net Worth Snapshot</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn ghost" id="exportBtn">⬇ Export Backup</button>
+      <button class="btn ghost" id="importBtn">⬆ Import Backup</button>
+    </div>
+    <input type="file" id="importFile" accept="application/json" class="hidden">
+  </section>
+
+  <!-- ============ ACCOUNTS ============ -->
+  <section id="page-accounts" class="hidden">
+    <div id="acctBoth" class="card hero hidden">
+      <div class="label">Combined Cash &amp; FDs</div>
+      <div class="val" id="acctCombined">₹0</div>
+    </div>
+    <div id="acctRahul">
+      <div class="subhead">🏦 Rahul — Bank Accounts</div>
+      <div class="card"><table><tbody id="rahulBanks"></tbody></table>
+        <button class="addbtn" data-add="rahulBanks">+ Add account</button>
+        <div class="tot"><span>Total</span><span class="v" id="rahulBankTot">₹0</span></div>
+      </div>
+    </div>
+    <div id="acctRhea">
+      <div class="subhead">🏦 Rhea — Bank Accounts</div>
+      <div class="card"><table><tbody id="rheaBanks"></tbody></table>
+        <button class="addbtn" data-add="rheaBanks">+ Add account</button>
+        <div class="tot"><span>Total</span><span class="v" id="rheaBankTot">₹0</span></div>
+      </div>
+      <div class="subhead">🔁 Rhea — Sweep / Rolling FD <span class="tag">auto-renew</span></div>
+      <div class="card">
+        <table><tbody>
+          <tr><td>Current amount</td><td class="right"><input id="sweepAmt" type="number"></td></tr>
+          <tr><td>Sweep threshold</td><td class="right"><input id="sweepThr" type="number"></td></tr>
+          <tr><td>Interest rate (%)</td><td class="right"><input id="sweepRate" type="number" step="0.1"></td></tr>
+        </tbody></table>
+      </div>
+    </div>
+    <div class="subhead">👫 Joint Accounts</div>
+    <div class="card"><table><tbody id="jointBanks"></tbody></table>
+      <button class="addbtn" data-add="jointBanks">+ Add joint account</button>
+      <div class="tot"><span>Total</span><span class="v" id="jointTot">₹0</span></div>
+    </div>
+  </section>
+
+  <!-- ============ INVESTMENTS ============ -->
+  <section id="page-investments" class="hidden">
+    <div id="invBoth" class="card hero hidden">
+      <div class="label">Combined Investments</div>
+      <div class="val" id="invCombined">₹0</div>
+    </div>
+
+    <div class="subhead">📈 Stocks <span class="tag" id="stkWho">Rahul</span></div>
+    <div class="card">
+      <div class="filerow">
+        <button class="filebtn" id="stkUpload">📄 Upload Zerodha CSV</button>
+        <input type="file" id="stkFile" accept=".csv" class="hidden">
+      </div>
+      <div class="hint">Expects Zerodha Holdings export: Instrument, Qty., Avg. cost, LTP.</div>
+      <table>
+        <thead><tr><th>Stock</th><th class="right">Qty</th><th class="right">Avg</th><th class="right">LTP</th><th class="right">P&amp;L</th><th></th></tr></thead>
+        <tbody id="stkBody"></tbody>
+      </table>
+      <button class="addbtn" data-add="stocks">+ Add stock</button>
+      <div class="tot"><span>Value</span><span class="v" id="stkTot">₹0</span></div>
+    </div>
+
+    <div class="subhead">💹 Mutual Funds <span class="tag" id="mfWho">Rahul</span></div>
+    <div class="card">
+      <div class="filerow">
+        <button class="filebtn" id="mfUpload">📄 Upload CSV</button>
+        <input type="file" id="mfFile" accept=".csv" class="hidden">
+      </div>
+      <div class="hint">CSV columns: Name, Units, NAV, SIP (header row optional).</div>
+      <table>
+        <thead><tr><th>Fund</th><th class="right">Units</th><th class="right">NAV</th><th class="right">SIP</th><th></th></tr></thead>
+        <tbody id="mfBody"></tbody>
+      </table>
+      <button class="addbtn" data-add="mf">+ Add fund</button>
+      <div class="tot"><span>Corpus</span><span class="v" id="mfTot">₹0</span></div>
+      <div class="tot" style="border:0;padding-top:4px"><span>Monthly SIP</span><span class="v" id="mfSip">₹0</span></div>
+    </div>
+
+    <div class="subhead">🏛️ EPF</div>
+    <div class="card">
+      <table><tbody>
+        <tr><td><b>Rahul</b> — Corpus</td><td class="right"><input id="epfR_corpus" type="number"></td></tr>
+        <tr><td>Rahul — Monthly (emp+empr)</td><td class="right"><input id="epfR_month" type="number"></td></tr>
+        <tr><td><b>Rhea</b> — Corpus</td><td class="right"><input id="epfH_corpus" type="number"></td></tr>
+        <tr><td>Rhea — Monthly (emp+empr)</td><td class="right"><input id="epfH_month" type="number"></td></tr>
+      </tbody></table>
+    </div>
+
+    <div class="subhead">🏦 PPF <span class="tag">Rahul</span></div>
+    <div class="card">
+      <table><tbody>
+        <tr><td>Current corpus</td><td class="right"><input id="ppf_corpus" type="number"></td></tr>
+        <tr><td>Monthly contribution</td><td class="right"><input id="ppf_month" type="number"></td></tr>
+      </tbody></table>
+    </div>
+  </section>
+
+  <!-- ============ EXPENSES ============ -->
+  <section id="page-expenses" class="hidden">
+    <div class="card hero">
+      <div class="label">Current Month</div>
+      <div class="val" id="monthLabel" style="font-size:26px">—</div>
+    </div>
+
+    <div id="expPerson"></div>
+  </section>
+
+  <!-- ============ BLUEPRINT ============ -->
+  <section id="page-blueprint" class="hidden">
+    <div class="card">
+      <h3>Wealth Blueprint</h3>
+      <div class="slider">
+        <label>Monthly investment <b id="lblInv">₹50,000</b></label>
+        <input type="range" id="sInv" min="5000" max="300000" step="5000" value="50000">
+      </div>
+      <div class="slider">
+        <label>Expected annual return <b id="lblRet">12%</b></label>
+        <input type="range" id="sRet" min="6" max="22" step="0.5" value="12">
+      </div>
+      <div class="slider">
+        <label>Assumed inflation <b id="lblInf">6%</b></label>
+        <input type="range" id="sInf" min="3" max="10" step="0.5" value="6">
+      </div>
+    </div>
+    <div class="card"><h3>Nominal vs Real Growth</h3><canvas id="bpChart" height="220"></canvas></div>
+    <div class="projgrid" id="projGrid"></div>
+    <div class="insight" id="bpInsight"></div>
+  </section>
+</div>
+
+<!-- bottom nav -->
+<div class="nav" id="nav">
+  <button data-page="dashboard" class="active"><span class="ic">◎</span>Dashboard</button>
+  <button data-page="accounts"><span class="ic">🏦</span>Accounts</button>
+  <button data-page="investments"><span class="ic">📈</span>Invest</button>
+  <button data-page="expenses"><span class="ic">💳</span>Expenses</button>
+  <button data-page="blueprint"><span class="ic">🚀</span>Blueprint</button>
+</div>
+
+<!-- generic modal -->
+<div class="modal hidden" id="modal"><div class="box">
+  <h3 id="modalTitle">Enter amount</h3>
+  <input type="number" id="modalInput" placeholder="0">
+  <button class="btn" id="modalSave">Save</button>
+</div></div>
+
+<script>
+/* =====================================================================
+   FIREBASE_CONFIG — paste your web app config here (see top of file).
+   Leave the values empty to run fully offline with localStorage.
+   ===================================================================== */
+const FIREBASE_CONFIG = {
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
+};
+const DOC_PATH = "wealth/shared"; // collection/doc both users share
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+const now = new Date();
+const monthKey = now.getFullYear()+"-"+String(now.getMonth()+1).padStart(2,"0");
+const monthName = now.toLocaleString("en-US",{month:"long",year:"numeric"});
+
+function fmtIN(n){
+  n = Math.round(n||0);
+  if(Math.abs(n) >= 1e7) return "₹"+(n/1e7).toFixed(2).replace(/\.00$/,"")+" Cr";
+  if(Math.abs(n) >= 1e5) return "₹"+(n/1e5).toFixed(2).replace(/\.00$/,"")+" L";
+  if(Math.abs(n) >= 1e3) return "₹"+(n/1e3).toFixed(1).replace(/\.0$/,"")+"K";
+  return "₹"+n.toLocaleString("en-IN");
+}
+function fmtFull(n){return "₹"+Math.round(n||0).toLocaleString("en-IN");}
+const num = v => parseFloat(v)||0;
+const sum = a => a.reduce((x,y)=>x+y,0);
+
+/* ---------- default data ---------- */
+function defaultData(){
+  return {
+    profile:"both",
+    banks:{
+      rahul:[{n:"HDFC Bank",v:0},{n:"SBI",v:0},{n:"Axis Bank",v:0},{n:"Federal Bank",v:0},{n:"ICICI",v:0}],
+      rhea:[{n:"HDFC Bank",v:0},{n:"SBI",v:0},{n:"Kotak",v:0}],
+      joint:[]
+    },
+    sweep:{amt:0,thr:0,rate:7},
+    stocks:{rahul:[],rhea:[]},
+    mf:{rahul:[],rhea:[]},
+    epf:{rahul:{corpus:0,month:0},rhea:{corpus:0,month:0}},
+    ppf:{corpus:0,month:5000},
+    income:{rahul:0,rhea:0},
+    cards:{
+      rahul:[
+        {id:"r1",nm:"Amex MRCC",net:"American Express",cls:"cc-amex-g"},
+        {id:"r2",nm:"HDFC Millennia",net:"Mastercard",cls:"cc-hdfc-b"},
+        {id:"r3",nm:"HDFC Tata Neu",net:"Rupay",cls:"cc-hdfc-r"},
+        {id:"r4",nm:"OneCard",net:"Visa",cls:"cc-onecard"}
+      ],
+      rhea:[
+        {id:"h1",nm:"Amex MRCC",net:"American Express",cls:"cc-amex-t"},
+        {id:"h2",nm:"HDFC Diners Black",net:"Diners Club",cls:"cc-diners"}
+      ]
+    },
+    bills:{}, // {monthKey:{cardId:amount}}
+    expenses:{ // per person monthly buckets
+      rahul:{Food:0,Transport:0,Utilities:0,Entertainment:0,Health:0,Misc:0},
+      rhea:{Food:0,Transport:0,Utilities:0,Entertainment:0,Health:0,Misc:0}
+    },
+    snapshots:[], // [{m:'2026-06', total, rahul, rhea}]
+    blueprint:{inv:50000,ret:12,inf:6}
+  };
+}
+
+let D = load();
+function load(){
+  try{ const s=localStorage.getItem("rrwealth"); if(s) return Object.assign(defaultData(),JSON.parse(s)); }catch(e){}
+  return defaultData();
+}
+let fbReady=false, fbDoc=null, applyingRemote=false;
+function save(){
+  localStorage.setItem("rrwealth",JSON.stringify(D));
+  if(fbReady && fbDoc && !applyingRemote){
+    fbDoc.set(D).catch(e=>console.warn("fb save",e));
+  }
+}
+
+/* ====================== CALCULATIONS ====================== */
+function personCash(p){
+  let t = sum(D.banks[p].map(b=>num(b.v)));
+  if(p==="rhea") t += num(D.sweep.amt);
+  return t;
+}
+function jointCash(){ return sum(D.banks.joint.map(b=>num(b.v))); }
+function stocksVal(p){ return sum(D.stocks[p].map(s=>num(s.qty)*num(s.ltp))); }
+function mfVal(p){ return sum(D.mf[p].map(m=>num(m.units)*num(m.nav))); }
+function mfSip(p){ return sum(D.mf[p].map(m=>num(m.sip))); }
+function epfVal(p){ return num(D.epf[p].corpus); }
+function ppfVal(p){ return p==="rahul"?num(D.ppf.corpus):0; }
+function personInvest(p){ return stocksVal(p)+mfVal(p)+epfVal(p)+ppfVal(p); }
+function personNW(p){ return personCash(p)+personInvest(p); }
+
+function cardBills(p){
+  const mb = D.bills[monthKey]||{};
+  return sum(D.cards[p].map(c=>num(mb[c.id])));
+}
+function otherExp(p){ return sum(Object.values(D.expenses[p]).map(num)); }
+function personMonthlyOut(p){
+  let t = cardBills(p)+otherExp(p)+mfSip(p)+num(D.epf[p].month);
+  if(p==="rahul") t += num(D.ppf.month);
+  return t;
+}
+function personIncome(p){ return num(D.income[p]); }
+
+function scopePersons(){ return D.profile==="both"?["rahul","rhea"]:[D.profile]; }
+function scopeNW(){ return D.profile==="both" ? personNW("rahul")+personNW("rhea")+jointCash() : personNW(D.profile); }
+function scopeIncome(){ return sum(scopePersons().map(personIncome)); }
+function scopeOut(){ return sum(scopePersons().map(personMonthlyOut)); }
+
+/* ====================== RENDER ====================== */
+let allocChart,expChart,histChart,bpChart;
+
+function renderAll(){
+  renderDashboard(); renderAccounts(); renderInvestments(); renderExpenses(); renderBlueprint();
+}
+
+function renderDashboard(){
+  const nw = scopeNW();
+  $("#nwLabel").textContent = D.profile==="both"?"Combined Net Worth":(cap(D.profile)+"'s Net Worth");
+  $("#nwVal").textContent = fmtIN(nw);
+
+  // delta vs last snapshot
+  const snaps = D.snapshots;
+  let deltaTxt="No snapshots yet", up=true;
+  if(snaps.length){
+    const last = snaps[snaps.length-1];
+    const prev = D.profile==="both"?last.total:(last[D.profile]||0);
+    const d = nw-prev; up = d>=0;
+    const pct = prev? (d/prev*100):0;
+    deltaTxt = (up?"▲ ":"▼ ")+fmtIN(Math.abs(d))+"  ("+(up?"+":"")+pct.toFixed(1)+"%) vs last snapshot";
+  }
+  const de=$("#nwDelta"); de.textContent=deltaTxt; de.className="delta "+(up?"up":"down");
+
+  // split
+  const sp=$("#nwSplit");
+  if(D.profile==="both"){
+    sp.innerHTML = `<div class="split"><div class="n">Rahul</div><div class="v">${fmtIN(personNW("rahul"))}</div></div>
+      <div class="split"><div class="n">Rhea</div><div class="v">${fmtIN(personNW("rhea"))}</div></div>
+      <div class="split"><div class="n">Joint</div><div class="v">${fmtIN(jointCash())}</div></div>`;
+  } else sp.innerHTML="";
+
+  const inc=scopeIncome(), out=scopeOut(), sav=inc-out;
+  $("#mIncome").textContent=fmtIN(inc);
+  $("#mSavings").textContent=fmtIN(sav);
+  $("#mExp").textContent=fmtIN(out);
+  $("#mRate").textContent=(inc?Math.round(sav/inc*100):0)+"%";
+
+  // allocation
+  const ps=scopePersons();
+  const cash=sum(ps.map(personCash))+(D.profile==="both"?jointCash():0);
+  const stk=sum(ps.map(stocksVal));
+  const mf=sum(ps.map(mfVal));
+  const retire=sum(ps.map(p=>epfVal(p)+ppfVal(p)));
+  drawDoughnut(cash,stk,mf,retire);
+
+  // expenses bar
+  drawExpBar();
+  drawHist();
+}
+
+function drawDoughnut(cash,stk,mf,retire){
+  const ctx=$("#allocChart");
+  const data=[cash,stk,mf,retire];
+  const cfg={type:"doughnut",data:{labels:["Cash & FDs","Stocks","Mutual Funds","EPF & PPF"],
+    datasets:[{data,backgroundColor:["#5b8cff","#9b6bff","#34d399","#f7c948"],borderWidth:0}]},
+    options:{cutout:"66%",plugins:{legend:{position:"bottom",labels:{color:cssVar("--muted"),padding:14,font:{size:12},usePointStyle:true}}}}};
+  if(allocChart) allocChart.destroy(); allocChart=new Chart(ctx,cfg);
+}
+function drawExpBar(){
+  const ps=scopePersons();
+  const cats=["Cards","Food","Transport","Utilities","Entertainment","Health","Misc","SIP","EPF/PPF"];
+  const vals=[
+    sum(ps.map(cardBills)),
+    sum(ps.map(p=>num(D.expenses[p].Food))),
+    sum(ps.map(p=>num(D.expenses[p].Transport))),
+    sum(ps.map(p=>num(D.expenses[p].Utilities))),
+    sum(ps.map(p=>num(D.expenses[p].Entertainment))),
+    sum(ps.map(p=>num(D.expenses[p].Health))),
+    sum(ps.map(p=>num(D.expenses[p].Misc))),
+    sum(ps.map(mfSip)),
+    sum(ps.map(p=>num(D.epf[p].month)))+(ps.includes("rahul")?num(D.ppf.month):0)
+  ];
+  const ctx=$("#expChart");
+  const cfg={type:"bar",data:{labels:cats,datasets:[{data:vals,backgroundColor:"#5b8cff",borderRadius:6}]},
+    options:{plugins:{legend:{display:false}},scales:{
+      x:{ticks:{color:cssVar("--muted"),font:{size:10}},grid:{display:false}},
+      y:{ticks:{color:cssVar("--muted"),callback:v=>fmtIN(v)},grid:{color:"rgba(255,255,255,.05)"}}}}};
+  if(expChart) expChart.destroy(); expChart=new Chart(ctx,cfg);
+}
+function drawHist(){
+  const ctx=$("#histChart");
+  const labels=D.snapshots.map(s=>s.m);
+  const vals=D.snapshots.map(s=>D.profile==="both"?s.total:(s[D.profile]||0));
+  const cfg={type:"line",data:{labels,datasets:[{data:vals,borderColor:"#9b6bff",backgroundColor:"rgba(155,107,255,.15)",fill:true,tension:.35,pointRadius:3}]},
+    options:{plugins:{legend:{display:false}},scales:{
+      x:{ticks:{color:cssVar("--muted"),font:{size:10}},grid:{display:false}},
+      y:{ticks:{color:cssVar("--muted"),callback:v=>fmtIN(v)},grid:{color:"rgba(255,255,255,.05)"}}}}};
+  if(histChart) histChart.destroy(); histChart=new Chart(ctx,cfg);
+}
+
+/* ---------- accounts ---------- */
+function renderAccounts(){
+  const both=D.profile==="both";
+  $("#acctBoth").classList.toggle("hidden",!both);
+  $("#acctRahul").classList.toggle("hidden",!(both||D.profile==="rahul"));
+  $("#acctRhea").classList.toggle("hidden",!(both||D.profile==="rhea"));
+  $("#acctCombined").textContent=fmtIN(personCash("rahul")+personCash("rhea")+jointCash());
+
+  bankTable("rahulBanks","rahul"); $("#rahulBankTot").textContent=fmtIN(sum(D.banks.rahul.map(b=>num(b.v))));
+  bankTable("rheaBanks","rhea"); $("#rheaBankTot").textContent=fmtIN(sum(D.banks.rhea.map(b=>num(b.v))));
+  jointTable(); $("#jointTot").textContent=fmtIN(jointCash());
+
+  $("#sweepAmt").value=D.sweep.amt||""; $("#sweepThr").value=D.sweep.thr||""; $("#sweepRate").value=D.sweep.rate||"";
+}
+function bankTable(id,p){
+  const tb=$("#"+id); tb.innerHTML="";
+  D.banks[p].forEach((b,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><input value="${esc(b.n)}" data-bank="${p}" data-i="${i}" data-f="n"></td>
+      <td class="right"><input type="number" value="${b.v||""}" data-bank="${p}" data-i="${i}" data-f="v"></td>
+      <td style="width:24px"><button class="xbtn" data-del="${p}" data-i="${i}">✕</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+function jointTable(){
+  const tb=$("#jointBanks"); tb.innerHTML="";
+  D.banks.joint.forEach((b,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><input value="${esc(b.n)}" data-bank="joint" data-i="${i}" data-f="n"></td>
+      <td class="right"><input type="number" value="${b.v||""}" data-bank="joint" data-i="${i}" data-f="v"></td>
+      <td style="width:24px"><button class="xbtn" data-del="joint" data-i="${i}">✕</button></td>`;
+    tb.appendChild(tr);
+  });
+}
+
+/* ---------- investments ---------- */
+function renderInvestments(){
+  const both=D.profile==="both";
+  $("#invBoth").classList.toggle("hidden",!both);
+  $("#invCombined").textContent=fmtIN(sum(scopePersons().map(personInvest)));
+  const who=both?"rahul":D.profile; // when both, default to rahul tables but show label
+  $("#stkWho").textContent=both?"Rahul":cap(who);
+  $("#mfWho").textContent=both?"Rahul":cap(who);
+  stkTable(who); mfTable(who);
+
+  $("#epfR_corpus").value=D.epf.rahul.corpus||""; $("#epfR_month").value=D.epf.rahul.month||"";
+  $("#epfH_corpus").value=D.epf.rhea.corpus||""; $("#epfH_month").value=D.epf.rhea.month||"";
+  $("#ppf_corpus").value=D.ppf.corpus||""; $("#ppf_month").value=D.ppf.month||"";
+}
+function stkTable(p){
+  const tb=$("#stkBody"); tb.innerHTML="";
+  D.stocks[p].forEach((s,i)=>{
+    const pl = num(s.avg)? ((num(s.ltp)-num(s.avg))/num(s.avg)*100):0;
+    const cls = pl>=0?"pl-pos":"pl-neg";
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><input value="${esc(s.nm||"")}" data-stk="${p}" data-i="${i}" data-f="nm"></td>
+      <td class="right"><input type="number" value="${s.qty||""}" data-stk="${p}" data-i="${i}" data-f="qty"></td>
+      <td class="right"><input type="number" value="${s.avg||""}" data-stk="${p}" data-i="${i}" data-f="avg"></td>
+      <td class="right"><input type="number" value="${s.ltp||""}" data-stk="${p}" data-i="${i}" data-f="ltp"></td>
+      <td class="right ${cls}">${(pl>=0?"+":"")+pl.toFixed(1)}%</td>
+      <td><button class="xbtn" data-delstk="${p}" data-i="${i}">✕</button></td>`;
+    tb.appendChild(tr);
+  });
+  $("#stkTot").textContent=fmtIN(stocksVal(p));
+}
+function mfTable(p){
+  const tb=$("#mfBody"); tb.innerHTML="";
+  D.mf[p].forEach((m,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td><input value="${esc(m.nm||"")}" data-mf="${p}" data-i="${i}" data-f="nm"></td>
+      <td class="right"><input type="number" value="${m.units||""}" data-mf="${p}" data-i="${i}" data-f="units"></td>
+      <td class="right"><input type="number" value="${m.nav||""}" data-mf="${p}" data-i="${i}" data-f="nav"></td>
+      <td class="right"><input type="number" value="${m.sip||""}" data-mf="${p}" data-i="${i}" data-f="sip"></td>
+      <td><button class="xbtn" data-delmf="${p}" data-i="${i}">✕</button></td>`;
+    tb.appendChild(tr);
+  });
+  $("#mfTot").textContent=fmtIN(mfVal(p));
+  $("#mfSip").textContent=fmtIN(mfSip(p));
+}
+
+/* ---------- expenses ---------- */
+function renderExpenses(){
+  $("#monthLabel").textContent=monthName;
+  const wrap=$("#expPerson"); wrap.innerHTML="";
+  scopePersons().forEach(p=>wrap.appendChild(personExpenseBlock(p)));
+}
+function personExpenseBlock(p){
+  const div=document.createElement("div");
+  const mb=D.bills[monthKey]||{};
+  const cardsHtml=D.cards[p].map(c=>{
+    const bill=mb[c.id];
+    return `<div class="cc ${c.cls}" data-card="${c.id}">
+      <div class="chip"></div>
+      <div><div class="net">${c.net}</div><div class="nm">${esc(c.nm)}</div></div>
+      <div class="billrow"><div class="bl">This month</div><div class="bv">${bill!=null&&bill!==""?fmtIN(num(bill)):"—"}</div></div>
+    </div>`;
+  }).join("");
+  const cats=Object.keys(D.expenses[p]);
+  const catRows=cats.map(c=>`<tr><td>${c}</td><td class="right"><input type="number" value="${D.expenses[p][c]||""}" data-exp="${p}" data-c="${c}"></td></tr>`).join("");
+
+  const inc=personIncome(p), out=personMonthlyOut(p), sav=inc-out;
+  const rate=inc?Math.round(sav/inc*100):0;
+  const rateCol = rate>=30?"var(--green)":rate>=15?"var(--amber)":"var(--red)";
+
+  div.innerHTML=`
+    <div class="subhead">👤 ${cap(p)}</div>
+    <div class="card">
+      <table><tbody>
+        <tr><td><b>Monthly income (take-home)</b></td><td class="right"><input type="number" value="${D.income[p]||""}" data-inc="${p}"></td></tr>
+      </tbody></table>
+    </div>
+    <div class="subhead" style="font-size:13px">💳 Credit Cards <span class="hint" style="margin:0">tap to enter bill</span></div>
+    <div class="ccwrap">${cardsHtml}</div>
+    <div class="subhead" style="font-size:13px">🧾 Other Monthly Expenses</div>
+    <div class="card"><table><tbody>${catRows}</tbody></table></div>
+    <div class="subhead" style="font-size:13px">🔄 Auto from Investments</div>
+    <div class="card">
+      <div class="sumrow"><span>Mutual Fund SIP</span><span>${fmtFull(mfSip(p))}</span></div>
+      <div class="sumrow"><span>EPF contribution</span><span>${fmtFull(num(D.epf[p].month))}</span></div>
+      ${p==="rahul"?`<div class="sumrow"><span>PPF contribution</span><span>${fmtFull(num(D.ppf.month))}</span></div>`:""}
+    </div>
+    <div class="card">
+      <div class="sumrow"><span>Income</span><span>${fmtFull(inc)}</span></div>
+      <div class="sumrow"><span>Expenses + Investments</span><span>${fmtFull(out)}</span></div>
+      <div class="sumrow big"><span>Savings</span><span style="color:${sav>=0?'var(--green)':'var(--red)'}">${fmtFull(sav)}</span></div>
+      <div class="bar"><div style="width:${Math.max(0,Math.min(100,rate))}%;background:${rateCol}"></div></div>
+      <div class="hint">Savings rate: <b style="color:${rateCol}">${rate}%</b></div>
+    </div>`;
+  return div;
+}
+
+/* ---------- blueprint ---------- */
+function renderBlueprint(){
+  const bp=D.blueprint;
+  $("#sInv").value=bp.inv; $("#sRet").value=bp.ret; $("#sInf").value=bp.inf;
+  $("#lblInv").textContent=fmtFull(bp.inv);
+  $("#lblRet").textContent=bp.ret+"%";
+  $("#lblInf").textContent=bp.inf+"%";
+
+  const start=scopeNW();
+  const r=bp.ret/100, infl=bp.inf/100, m=bp.inv;
+  const realR=(1+r)/(1+infl)-1;
+  const nominal=[], real=[], labels=[];
+  for(let y=0;y<=25;y++){
+    labels.push(y);
+    nominal.push(fv(start,m,r,y));
+    real.push(fv(start,m,realR,y));
+  }
+  const ctx=$("#bpChart");
+  const cfg={type:"line",data:{labels,datasets:[
+    {label:"Nominal",data:nominal,borderColor:"#5b8cff",backgroundColor:"rgba(91,140,255,.12)",fill:true,tension:.3,pointRadius:0},
+    {label:"Real (today's ₹)",data:real,borderColor:"#34d399",borderDash:[5,4],tension:.3,pointRadius:0,fill:false}
+  ]},options:{plugins:{legend:{labels:{color:cssVar("--muted"),usePointStyle:true}}},scales:{
+    x:{ticks:{color:cssVar("--muted")},grid:{display:false},title:{display:true,text:"Years",color:cssVar("--muted")}},
+    y:{ticks:{color:cssVar("--muted"),callback:v=>fmtIN(v)},grid:{color:"rgba(255,255,255,.05)"}}}}};
+  if(bpChart) bpChart.destroy(); bpChart=new Chart(ctx,cfg);
+
+  const grid=$("#projGrid"); grid.innerHTML="";
+  [5,10,20,25].forEach(y=>{
+    const d=document.createElement("div"); d.className="proj";
+    d.innerHTML=`<div class="yr">${y} years</div><div class="nv">${fmtIN(fv(start,m,r,y))}</div>
+      <div class="rv">Real: ${fmtIN(fv(start,m,realR,y))}</div>`;
+    grid.appendChild(d);
+  });
+
+  const inc=scopeIncome();
+  const pctInv=inc?Math.round(m/inc*100):0;
+  const realPct=(realR*100).toFixed(1);
+  const c25=fv(start,m,r,25), rc25=fv(start,m,realR,25);
+  $("#bpInsight").innerHTML=`Starting from your current net worth of <b>${fmtIN(start)}</b>, investing <b>${fmtFull(m)}/month</b>
+    (~<b>${pctInv}%</b> of monthly income) at <b>${bp.ret}%</b> nominal grows to <b>${fmtIN(c25)}</b> in 25 years.
+    After <b>${bp.inf}%</b> inflation your real return is <b>${realPct}%</b>, worth <b>${fmtIN(rc25)}</b> in today's rupees —
+    that's the number that actually buys things.`;
+}
+function fv(start,m,r,years){
+  const months=years*12, mr=r/12;
+  const fvStart=start*Math.pow(1+mr,months);
+  const fvSip= mr===0? m*months : m*((Math.pow(1+mr,months)-1)/mr);
+  return fvStart+fvSip;
+}
+
+/* ====================== EVENTS ====================== */
+// profile pill
+$("#profilePill").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b)return;
+  D.profile=b.dataset.p; save();
+  $$("#profilePill button").forEach(x=>x.classList.toggle("active",x===b));
+  renderAll();
+});
+// nav
+$("#nav").addEventListener("click",e=>{
+  const b=e.target.closest("button"); if(!b)return;
+  $$("#nav button").forEach(x=>x.classList.toggle("active",x===b));
+  $$("section").forEach(s=>s.classList.add("hidden"));
+  $("#page-"+b.dataset.page).classList.remove("hidden");
+  window.scrollTo(0,0);
+});
+// theme
+$("#themeBtn").addEventListener("click",()=>{
+  const t=document.documentElement.getAttribute("data-theme")==="dark"?"light":"dark";
+  document.documentElement.setAttribute("data-theme",t);
+  $("#themeBtn").textContent=t==="dark"?"🌙":"☀️";
+  localStorage.setItem("rrtheme",t);
+  renderAll();
+});
+
+// delegated input handling
+document.addEventListener("input",e=>{
+  const t=e.target;
+  if(t.dataset.bank!=null){ D.banks[t.dataset.bank][+t.dataset.i][t.dataset.f]=t.dataset.f==="v"?num(t.value):t.value; liveSave(); }
+  else if(t.dataset.stk!=null){ D.stocks[t.dataset.stk][+t.dataset.i][t.dataset.f]=t.dataset.f==="nm"?t.value:num(t.value); liveSave(true); }
+  else if(t.dataset.mf!=null){ D.mf[t.dataset.mf][+t.dataset.i][t.dataset.f]=t.dataset.f==="nm"?t.value:num(t.value); liveSave(true); }
+  else if(t.dataset.exp!=null){ D.expenses[t.dataset.exp][t.dataset.c]=num(t.value); liveSave(); }
+  else if(t.dataset.inc!=null){ D.income[t.dataset.inc]=num(t.value); liveSave(); }
+  else if(t.id==="sweepAmt"){ D.sweep.amt=num(t.value); liveSave(); }
+  else if(t.id==="sweepThr"){ D.sweep.thr=num(t.value); save(); }
+  else if(t.id==="sweepRate"){ D.sweep.rate=num(t.value); save(); }
+  else if(t.id==="epfR_corpus"){ D.epf.rahul.corpus=num(t.value); liveSave(); }
+  else if(t.id==="epfR_month"){ D.epf.rahul.month=num(t.value); liveSave(); }
+  else if(t.id==="epfH_corpus"){ D.epf.rhea.corpus=num(t.value); liveSave(); }
+  else if(t.id==="epfH_month"){ D.epf.rhea.month=num(t.value); liveSave(); }
+  else if(t.id==="ppf_corpus"){ D.ppf.corpus=num(t.value); liveSave(); }
+  else if(t.id==="ppf_month"){ D.ppf.month=num(t.value); liveSave(); }
+});
+// debounced re-render so totals update without losing focus
+let liveTimer;
+function liveSave(refreshTables){
+  save();
+  clearTimeout(liveTimer);
+  liveTimer=setTimeout(()=>{
+    // update totals + charts but avoid wiping inputs the user is typing in
+    if(!document.activeElement || document.activeElement.tagName!=="INPUT"){ renderAll(); }
+    else { updateTotalsOnly(); }
+  },400);
+}
+function updateTotalsOnly(){
+  $("#rahulBankTot").textContent=fmtIN(sum(D.banks.rahul.map(b=>num(b.v))));
+  $("#rheaBankTot").textContent=fmtIN(sum(D.banks.rhea.map(b=>num(b.v))));
+  $("#jointTot").textContent=fmtIN(jointCash());
+  $("#stkTot").textContent=fmtIN(stocksVal(D.profile==="both"?"rahul":D.profile));
+  $("#mfTot").textContent=fmtIN(mfVal(D.profile==="both"?"rahul":D.profile));
+  $("#mfSip").textContent=fmtIN(mfSip(D.profile==="both"?"rahul":D.profile));
+  $("#nwVal").textContent=fmtIN(scopeNW());
+  $("#invCombined").textContent=fmtIN(sum(scopePersons().map(personInvest)));
+  $("#acctCombined").textContent=fmtIN(personCash("rahul")+personCash("rhea")+jointCash());
+}
+
+// add / delete rows
+document.addEventListener("click",e=>{
+  const t=e.target;
+  if(t.dataset.add){
+    const k=t.dataset.add;
+    if(k==="rahulBanks"){D.banks.rahul.push({n:"New account",v:0});}
+    else if(k==="rheaBanks"){D.banks.rhea.push({n:"New account",v:0});}
+    else if(k==="jointBanks"){D.banks.joint.push({n:"Joint account",v:0});}
+    else if(k==="stocks"){D.stocks[D.profile==="both"?"rahul":D.profile].push({nm:"",qty:0,avg:0,ltp:0});}
+    else if(k==="mf"){D.mf[D.profile==="both"?"rahul":D.profile].push({nm:"",units:0,nav:0,sip:0});}
+    save(); renderAll();
+  }
+  else if(t.dataset.del!=null){ D.banks[t.dataset.del].splice(+t.dataset.i,1); save(); renderAll(); }
+  else if(t.dataset.delstk!=null){ D.stocks[t.dataset.delstk].splice(+t.dataset.i,1); save(); renderAll(); }
+  else if(t.dataset.delmf!=null){ D.mf[t.dataset.delmf].splice(+t.dataset.i,1); save(); renderAll(); }
+  else if(t.closest("[data-card]")){ openCardModal(t.closest("[data-card]").dataset.card); }
+});
+
+// sliders
+["sInv","sRet","sInf"].forEach(id=>{
+  $("#"+id).addEventListener("input",()=>{
+    D.blueprint.inv=num($("#sInv").value);
+    D.blueprint.ret=num($("#sRet").value);
+    D.blueprint.inf=num($("#sInf").value);
+    save(); renderBlueprint();
+  });
+});
+
+// modal (card bills)
+let modalCard=null;
+function openCardModal(id){
+  modalCard=id;
+  let nm=""; for(const p of["rahul","rhea"]){const c=D.cards[p].find(x=>x.id===id); if(c)nm=c.nm;}
+  $("#modalTitle").textContent=nm+" — "+monthName+" bill";
+  const mb=D.bills[monthKey]||{};
+  $("#modalInput").value=mb[id]||"";
+  $("#modal").classList.remove("hidden");
+  setTimeout(()=>$("#modalInput").focus(),50);
+}
+$("#modalSave").addEventListener("click",()=>{
+  if(!D.bills[monthKey]) D.bills[monthKey]={};
+  D.bills[monthKey][modalCard]=num($("#modalInput").value);
+  save(); $("#modal").classList.add("hidden"); renderAll();
+});
+$("#modal").addEventListener("click",e=>{ if(e.target.id==="modal") $("#modal").classList.add("hidden"); });
+
+// snapshot
+$("#snapBtn").addEventListener("click",()=>{
+  const snap={m:monthKey,total:personNW("rahul")+personNW("rhea")+jointCash(),
+    rahul:personNW("rahul"),rhea:personNW("rhea")};
+  const i=D.snapshots.findIndex(s=>s.m===monthKey);
+  if(i>=0) D.snapshots[i]=snap; else D.snapshots.push(snap);
+  D.snapshots.sort((a,b)=>a.m<b.m?-1:1);
+  save(); renderDashboard();
+});
+
+// export / import
+$("#exportBtn").addEventListener("click",()=>{
+  const blob=new Blob([JSON.stringify(D,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="rr-wealth-backup-"+monthKey+".json"; a.click();
+});
+$("#importBtn").addEventListener("click",()=>$("#importFile").click());
+$("#importFile").addEventListener("change",e=>{
+  const f=e.target.files[0]; if(!f)return;
+  const r=new FileReader();
+  r.onload=()=>{ try{ D=Object.assign(defaultData(),JSON.parse(r.result)); save(); renderAll(); alert("Backup imported."); }catch(err){ alert("Invalid file."); } };
+  r.readAsText(f);
+});
+
+// CSV uploads
+$("#stkUpload").addEventListener("click",()=>$("#stkFile").click());
+$("#stkFile").addEventListener("change",e=>parseStockCsv(e.target.files[0]));
+$("#mfUpload").addEventListener("click",()=>$("#mfFile").click());
+$("#mfFile").addEventListener("change",e=>parseMfCsv(e.target.files[0]));
+
+function readCsv(file,cb){ const r=new FileReader(); r.onload=()=>cb(r.result); r.readAsText(file); }
+function splitCsvLine(line){
+  const out=[]; let cur="",q=false;
+  for(const ch of line){ if(ch==='"'){q=!q;} else if(ch===","&&!q){out.push(cur);cur="";} else cur+=ch; }
+  out.push(cur); return out.map(s=>s.trim());
+}
+function parseStockCsv(file){
+  if(!file)return;
+  readCsv(file,txt=>{
+    const lines=txt.split(/\r?\n/).filter(l=>l.trim());
+    const p=D.profile==="both"?"rahul":D.profile;
+    let header=splitCsvLine(lines[0]).map(h=>h.toLowerCase());
+    const iName=header.findIndex(h=>h.includes("instrument")||h.includes("symbol")||h.includes("stock"));
+    const iQty=header.findIndex(h=>h.includes("qty")||h.includes("quantity"));
+    const iAvg=header.findIndex(h=>h.includes("avg"));
+    const iLtp=header.findIndex(h=>h.includes("ltp")||h.includes("last")||h.includes("price"));
+    const rows=[];
+    for(let k=1;k<lines.length;k++){
+      const c=splitCsvLine(lines[k]); if(c.length<2)continue;
+      const nm=iName>=0?c[iName]:c[0]; if(!nm)continue;
+      rows.push({nm,qty:num(c[iQty>=0?iQty:1]),avg:num(c[iAvg>=0?iAvg:2]),ltp:num(c[iLtp>=0?iLtp:3])});
+    }
+    if(rows.length){ D.stocks[p]=rows; save(); renderInvestments(); renderDashboard(); alert(rows.length+" stocks imported for "+cap(p)+"."); }
+    else alert("Couldn't parse any rows.");
+    $("#stkFile").value="";
+  });
+}
+function parseMfCsv(file){
+  if(!file)return;
+  readCsv(file,txt=>{
+    const lines=txt.split(/\r?\n/).filter(l=>l.trim());
+    const p=D.profile==="both"?"rahul":D.profile;
+    let start=0;
+    const h=splitCsvLine(lines[0]).map(x=>x.toLowerCase()).join(" ");
+    if(h.includes("name")||h.includes("fund")||h.includes("nav")) start=1;
+    const rows=[];
+    for(let k=start;k<lines.length;k++){
+      const c=splitCsvLine(lines[k]); if(c.length<2)continue;
+      rows.push({nm:c[0],units:num(c[1]),nav:num(c[2]),sip:num(c[3])});
+    }
+    if(rows.length){ D.mf[p]=rows; save(); renderInvestments(); renderDashboard(); alert(rows.length+" funds imported for "+cap(p)+"."); }
+    else alert("Couldn't parse any rows.");
+    $("#mfFile").value="";
+  });
+}
+
+/* ---------- util ---------- */
+function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
+function esc(s){return String(s).replace(/"/g,"&quot;").replace(/</g,"&lt;");}
+function cssVar(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||"#888";}
+
+/* ====================== FIREBASE ====================== */
+function initFirebase(){
+  if(!FIREBASE_CONFIG.apiKey){ setSync(false); return; }
+  const s1=document.createElement("script"); s1.src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js";
+  s1.onload=()=>{
+    const s2=document.createElement("script"); s2.src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js";
+    s2.onload=()=>{
+      try{
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const db=firebase.firestore();
+        const [col,doc]=DOC_PATH.split("/");
+        fbDoc=db.collection(col).doc(doc);
+        fbReady=true; setSync(true);
+        fbDoc.get().then(snap=>{
+          if(snap.exists){ applyingRemote=true; D=Object.assign(defaultData(),snap.data()); applyingRemote=false; localStorage.setItem("rrwealth",JSON.stringify(D)); syncProfileUI(); renderAll(); }
+          else { fbDoc.set(D); }
+          // live updates
+          fbDoc.onSnapshot(s=>{
+            if(s.metadata.hasPendingWrites)return;
+            const data=s.data(); if(!data)return;
+            applyingRemote=true; D=Object.assign(defaultData(),data); applyingRemote=false;
+            localStorage.setItem("rrwealth",JSON.stringify(D));
+            if(!document.activeElement||document.activeElement.tagName!=="INPUT"){ syncProfileUI(); renderAll(); }
+          });
+        });
+      }catch(e){ console.warn(e); setSync(false); }
+    };
+    document.body.appendChild(s2);
+  };
+  s1.onerror=()=>setSync(false);
+  document.body.appendChild(s1);
+}
+function setSync(ok){
+  $("#syncDot").classList.toggle("ok",ok);
+  $("#syncTxt").textContent=ok?"Synced":"Local";
+}
+function syncProfileUI(){
+  $$("#profilePill button").forEach(x=>x.classList.toggle("active",x.dataset.p===D.profile));
+}
+
+/* ====================== INIT ====================== */
+(function init(){
+  const t=localStorage.getItem("rrtheme")||"dark";
+  document.documentElement.setAttribute("data-theme",t);
+  $("#themeBtn").textContent=t==="dark"?"🌙":"☀️";
+  syncProfileUI();
+  renderAll();
+  initFirebase();
+})();
+</script>
+</body>
+</html>

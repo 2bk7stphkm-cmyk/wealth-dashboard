@@ -1,0 +1,11 @@
+# Real financial data backups — never commit these
+rr-wealth-backup-*.json
+*.backup.json
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
