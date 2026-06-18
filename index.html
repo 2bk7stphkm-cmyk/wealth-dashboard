@@ -304,10 +304,15 @@ input[type=number]{-moz-appearance:textfield}
   <!-- ============ BLUEPRINT ============ -->
   <section id="page-blueprint" class="hidden">
     <div class="card">
-      <h3>Wealth Blueprint</h3>
+      <h3>Monthly Investment Flow</h3>
+      <div id="bpFlowBreakdown"></div>
+    </div>
+    <div class="card">
+      <h3>Projection Settings</h3>
       <div class="slider">
         <label>Monthly investment <b id="lblInv">₹50,000</b></label>
-        <input type="range" id="sInv" min="5000" max="300000" step="5000" value="50000">
+        <input type="range" id="sInv" min="5000" max="500000" step="5000" value="50000">
+        <div class="hint" id="bpActualHint"></div>
       </div>
       <div class="slider">
         <label>Expected annual return <b id="lblRet">12%</b></label>
@@ -318,7 +323,7 @@ input[type=number]{-moz-appearance:textfield}
         <input type="range" id="sInf" min="3" max="10" step="0.5" value="6">
       </div>
     </div>
-    <div class="card"><h3>Nominal vs Real Growth</h3><canvas id="bpChart" height="220"></canvas></div>
+    <div class="card"><h3>Next 12 Months</h3><canvas id="bpChart" height="220"></canvas></div>
     <div class="projgrid" id="projGrid"></div>
     <div class="insight" id="bpInsight"></div>
   </section>
@@ -687,45 +692,89 @@ function personExpenseBlock(p){
 /* ---------- blueprint ---------- */
 function renderBlueprint(){
   const bp=D.blueprint;
+  const ps=scopePersons();
+
+  // Real investment breakdown from actual data
+  const realMfSip=sum(ps.map(mfSip));
+  const realEpf=sum(ps.map(p=>num(D.epf[p].month)));
+  const realPpf=ps.includes("rahul")?num(D.ppf.month):0;
+  const realTotal=realMfSip+realEpf+realPpf;
+
+  const flowHtml=realTotal>0
+    ?(realMfSip?`<div class="sumrow"><span>Mutual Fund SIP</span><span>${fmtFull(realMfSip)}</span></div>`:"")
+     +(realEpf?`<div class="sumrow"><span>EPF</span><span>${fmtFull(realEpf)}</span></div>`:"")
+     +(realPpf?`<div class="sumrow"><span>PPF</span><span>${fmtFull(realPpf)}</span></div>`:"")
+     +`<div class="sumrow big"><span>Total / month</span><span>${fmtFull(realTotal)}</span></div>`
+    :`<div class="hint">Add SIP, EPF and PPF amounts on the Investments tab to see your actual flow.</div>`;
+  $("#bpFlowBreakdown").innerHTML=flowHtml;
+
+  // Sliders
   $("#sInv").value=bp.inv; $("#sRet").value=bp.ret; $("#sInf").value=bp.inf;
   $("#lblInv").textContent=fmtFull(bp.inv);
   $("#lblRet").textContent=bp.ret+"%";
   $("#lblInf").textContent=bp.inf+"%";
 
+  // Hint: actual vs projection slider
+  const hint=$("#bpActualHint");
+  if(realTotal>0&&realTotal!==bp.inv){
+    hint.innerHTML=`Your actual monthly investment is <b>${fmtFull(realTotal)}</b> · <a href="#" id="useActualBtn" style="color:var(--accent);text-decoration:none;font-weight:600">Use this</a>`;
+  } else { hint.textContent=""; }
+
   const start=scopeNW();
   const r=bp.ret/100, infl=bp.inf/100, m=bp.inv;
+  const mr=r/12;
   const realR=(1+r)/(1+infl)-1;
-  const nominal=[], real=[], labels=[];
-  for(let y=0;y<=25;y++){
-    labels.push(y);
-    nominal.push(fv(start,m,r,y));
-    real.push(fv(start,m,realR,y));
+
+  // 12-month corpus projection
+  const labels12=[], corpus12=[];
+  let c=start;
+  for(let i=0;i<=12;i++){
+    const d=new Date(now.getFullYear(),now.getMonth()+i,1);
+    labels12.push(d.toLocaleString("en-IN",{month:"short",year:"2-digit"}));
+    corpus12.push(Math.round(c));
+    if(i<12) c=c*(1+mr)+m;
   }
+
   const ctx=$("#bpChart");
-  const cfg={type:"line",data:{labels,datasets:[
-    {label:"Nominal",data:nominal,borderColor:"#5b8cff",backgroundColor:"rgba(91,140,255,.12)",fill:true,tension:.3,pointRadius:0},
-    {label:"Real (today's ₹)",data:real,borderColor:"#34d399",borderDash:[5,4],tension:.3,pointRadius:0,fill:false}
-  ]},options:{plugins:{legend:{labels:{color:cssVar("--muted"),usePointStyle:true}}},scales:{
-    x:{ticks:{color:cssVar("--muted")},grid:{display:false},title:{display:true,text:"Years",color:cssVar("--muted")}},
-    y:{ticks:{color:cssVar("--muted"),callback:v=>fmtIN(v)},grid:{color:"rgba(255,255,255,.05)"}}}}};
+  const cfg={type:"line",data:{labels:labels12,datasets:[{
+    label:"Corpus",data:corpus12,
+    borderColor:"#9b6bff",backgroundColor:"rgba(155,107,255,0.12)",
+    fill:true,tension:.35,pointRadius:3,pointBackgroundColor:"#9b6bff"
+  }]},options:{
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:c=>"₹"+Math.round(c.raw).toLocaleString("en-IN")}}
+    },
+    scales:{
+      x:{ticks:{color:cssVar("--muted"),font:{size:10}},grid:{display:false}},
+      y:{ticks:{color:cssVar("--muted"),callback:v=>fmtIN(v),font:{size:10}},grid:{color:"rgba(255,255,255,.05)"}}
+    }
+  }};
   if(bpChart) bpChart.destroy(); bpChart=new Chart(ctx,cfg);
 
+  // Milestone cards: 1yr / 3yr / 5yr / 10yr
   const grid=$("#projGrid"); grid.innerHTML="";
-  [5,10,20,25].forEach(y=>{
+  [1,3,5,10].forEach(y=>{
+    const nom=fv(start,m,r,y);
+    const real=fv(start,m,realR,y);
     const d=document.createElement("div"); d.className="proj";
-    d.innerHTML=`<div class="yr">${y} years</div><div class="nv">${fmtIN(fv(start,m,r,y))}</div>
-      <div class="rv">Real: ${fmtIN(fv(start,m,realR,y))}</div>`;
+    d.innerHTML=`<div class="yr">${y} year${y>1?"s":""}</div>
+      <div class="nv">${fmtIN(nom)}</div>
+      <div class="rv">~${fmtIN(real)} today's ₹</div>`;
     grid.appendChild(d);
   });
 
+  // Insight
   const inc=scopeIncome();
   const pctInv=inc?Math.round(m/inc*100):0;
-  const realPct=(realR*100).toFixed(1);
-  const c25=fv(start,m,r,25), rc25=fv(start,m,realR,25);
-  $("#bpInsight").innerHTML=`Starting from your current net worth of <b>${fmtIN(start)}</b>, investing <b>${fmtFull(m)}/month</b>
-    (~<b>${pctInv}%</b> of monthly income) at <b>${bp.ret}%</b> nominal grows to <b>${fmtIN(c25)}</b> in 25 years.
-    After <b>${bp.inf}%</b> inflation your real return is <b>${realPct}%</b>, worth <b>${fmtIN(rc25)}</b> in today's rupees —
-    that's the number that actually buys things.`;
+  const c10=fv(start,m,r,10);
+  const totalIn10=m*12*10;
+  const gains10=Math.max(0,c10-start-totalIn10);
+  const gainPct=totalIn10>0?Math.round(gains10/totalIn10*100):0;
+  $("#bpInsight").innerHTML=`Starting at <b>${fmtIN(start)}</b>, investing <b>${fmtFull(m)}/mo</b>`
+    +(inc?` (~<b>${pctInv}%</b> of income)`:"")+` at <b>${bp.ret}%</b> return → <b>${fmtIN(c10)}</b> in 10 years. `
+    +(gains10>0?`You invest <b>${fmtIN(totalIn10)}</b> and compounding adds another <b>${fmtIN(gains10)}</b> (${gainPct}% free returns). `:"")
+    +`Milestone cards show projected value; "today's ₹" adjusts for <b>${bp.inf}%</b> inflation.`;
 }
 function fv(start,m,r,years){
   const months=years*12, mr=r/12;
@@ -817,6 +866,13 @@ function updateTotalsOnly(){
 // add / delete rows
 document.addEventListener("click",e=>{
   const t=e.target;
+  if(t.id==="useActualBtn"){
+    e.preventDefault();
+    const ps=scopePersons();
+    const rt=sum(ps.map(mfSip))+sum(ps.map(p=>num(D.epf[p].month)))+(ps.includes("rahul")?num(D.ppf.month):0);
+    if(rt){ D.blueprint.inv=rt; save(); renderBlueprint(); }
+    return;
+  }
   if(t.dataset.add){
     const k=t.dataset.add;
     if(k==="rahulBanks"){D.banks.rahul.push({n:"New account",v:0});}
